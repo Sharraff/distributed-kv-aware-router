@@ -9,9 +9,5 @@ use request::Request;
 use worker::Worker;
 
 pub trait RoutingPolicy {
-    fn choose_worker(
-        &mut self,
-        request: &Request,
-        workers: &mut [Worker],
-    ) -> usize;
+    fn choose_worker(&mut self, request: &Request, workers: &mut [Worker]) -> usize;
 }

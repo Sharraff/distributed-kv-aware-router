@@ -3,8 +3,6 @@ use std::collections::VecDeque;
 use crate::cache::PrefixCache;
 use crate::request::Request;
 
-
-
 #[derive(Debug)]
 pub struct ActiveRequest {
     pub request: Request,
@@ -57,11 +55,7 @@ impl Worker {
     pub fn load(&self) -> f64 {
         let queue_load = self.queue.len() as f64;
 
-        let active_load = if self.active.is_some() {
-            1.0
-        } else {
-            0.0
-        };
+        let active_load = if self.active.is_some() { 1.0 } else { 0.0 };
 
         queue_load + active_load
     }

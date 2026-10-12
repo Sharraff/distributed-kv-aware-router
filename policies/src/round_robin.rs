@@ -2,7 +2,6 @@ use simulator::{request::Request, worker::Worker};
 
 use crate::RoutingPolicy;
 
-
 pub struct RoundRobin {
     next: usize,
 }
@@ -14,11 +13,7 @@ impl RoundRobin {
 }
 
 impl RoutingPolicy for RoundRobin {
-    fn choose_worker(
-        &mut self,
-        _request: &Request,
-        workers: &mut [Worker],
-    ) -> usize {
+    fn choose_worker(&mut self, _request: &Request, workers: &mut [Worker]) -> usize {
         let selected = self.next % workers.len();
         self.next += 1;
         selected

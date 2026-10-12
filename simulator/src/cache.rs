@@ -73,11 +73,11 @@ impl PrefixCache {
 
     fn evict_one(&mut self) -> bool {
         let victim = self
-             .entries
-             .iter()
-             .min_by_key(|(_, entry)| entry.last_used)
-             .map(|(key, _)| key.clone());
-        
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_used)
+            .map(|(key, _)| key.clone());
+
         match victim {
             Some(key) => {
                 if let Some(entry) = self.entries.remove(&key) {

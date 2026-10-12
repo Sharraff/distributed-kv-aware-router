@@ -5,5 +5,6 @@ edition = "2024"
 
 [dependencies]
 protocol = { path = "../protocol" }
+policies = { path = "../policies" }
 
 tokio = { version = "1", features = ["full"] }

@@ -15,4 +15,6 @@ pub struct WorkerState {
     pub kv_cache_capacity: usize,
 
     pub compute_utilization: f64,
+
+    pub cached_prefixes: Vec<Vec<u32>>,
 }

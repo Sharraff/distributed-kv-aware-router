@@ -6,4 +6,5 @@ struct WorkerState {
     kv_cache_capacity: usize,
     cache_entries: HashMap<Prefix, CacheEntry>,
     compute_utilization: f64,
+    cached_prefixes: f64
 }

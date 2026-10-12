@@ -13,4 +13,4 @@ pub struct InferenceResponse {
     pub output_tokens: Vec<u32>,
 }
 
-pub type WorkerId = u64;
+//pub type WorkerId = u64;

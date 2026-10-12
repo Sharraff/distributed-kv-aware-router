@@ -1,4 +1,5 @@
-use crate::{model::PerformanceModel,
+use crate::{
+    model::PerformanceModel,
     request::Request,
     worker::{ActiveRequest, Worker},
 };
@@ -80,19 +81,11 @@ pub struct Simulator<P> {
 }
 
 impl<P: RoutingPolicy> Simulator<P> {
-    pub fn new(
-        config: SimulationConfig,
-        policy: P,
-    ) -> Self {
+    pub fn new(config: SimulationConfig, policy: P) -> Self {
         let workers = (0..config.number_workers)
-            .map(|id| {
-                Worker::new(
-                    id,
-                    config.cache_capacity_tokens,
-                )
-            })
+            .map(|id| Worker::new(id, config.cache_capacity_tokens))
             .collect();
-        
+
         Self {
             workers,
             policy,
@@ -100,10 +93,7 @@ impl<P: RoutingPolicy> Simulator<P> {
         }
     }
 
-    pub fn run(
-        &mut self,
-        requests: &[Request],
-    ) -> SimulationResult {
+    pub fn run(&mut self, requests: &[Request]) -> SimulationResult {
         let mut current_time_ms = 0.0;
 
         let mut metrics = Vec::with_capacity(requests.len());
@@ -117,20 +107,14 @@ impl<P: RoutingPolicy> Simulator<P> {
             || self.has_queued_requests()
         {
             /*
-            * Determine when the next interesting event happens.
-            */
-            let next_arrival = requests
-                .get(next_request)
-                .map(|r| r.arrival_time_ms as f64);
-            
-            let next_completion = self.next_completion_time(
-                current_time_ms,
-            );
+             * Determine when the next interesting event happens.
+             */
+            let next_arrival = requests.get(next_request).map(|r| r.arrival_time_ms as f64);
+
+            let next_completion = self.next_completion_time(current_time_ms);
 
             let next_event = match (next_arrival, next_completion) {
-                (Some(arrival), Some(completion)) => {
-                    arrival.min(completion)
-                }
+                (Some(arrival), Some(completion)) => arrival.min(completion),
 
                 (Some(arrival), None) => arrival,
 
@@ -140,34 +124,26 @@ impl<P: RoutingPolicy> Simulator<P> {
             };
 
             /*
-            * Advance simulation time.
-            */
+             * Advance simulation time.
+             */
             let elasped = next_event - current_time_ms;
 
             self.advance_time(elasped);
 
             current_time_ms = next_event;
 
-
             /*
-            * Finish everything that completed at this time.
-            */
-            self.process_completions(
-                current_time_ms,
-                &mut metrics,
-                &mut events,
-            );
+             * Finish everything that completed at this time.
+             */
+            self.process_completions(current_time_ms, &mut metrics, &mut events);
 
             /*
              * Process all requests arriving at this timestamp.
-            */
+             */
             while next_request < requests.len()
-                && requests[next_request]
-                   .arrival_time_ms as f64
-                   <= current_time_ms
+                && requests[next_request].arrival_time_ms as f64 <= current_time_ms
             {
-                let request = 
-                    requests[next_request].clone();
+                let request = requests[next_request].clone();
 
                 events.push(SimulationEvent {
                     time_ms: current_time_ms,
@@ -181,12 +157,8 @@ impl<P: RoutingPolicy> Simulator<P> {
                     cached_tokens: None,
                 });
 
-                let worker_id = 
-                    self.policy.choose_worker(
-                        &request,
-                        &mut self.workers,
-                    );
-                
+                let worker_id = self.policy.choose_worker(&request, &mut self.workers);
+
                 events.push(SimulationEvent {
                     time_ms: current_time_ms,
 
@@ -199,69 +171,47 @@ impl<P: RoutingPolicy> Simulator<P> {
                     cached_tokens: None,
                 });
 
-                self.workers[worker_id]
-                    .queue
-                    .push_back(request);
-                
+                self.workers[worker_id].queue.push_back(request);
+
                 events.push(SimulationEvent {
                     time_ms: current_time_ms,
 
                     kind: SimulationEventKind::Queued,
 
-                    request_id: 
-                        self.workers[worker_id]
-                            .queue
-                            .back()
-                            .unwrap()
-                            .id,
+                    request_id: self.workers[worker_id].queue.back().unwrap().id,
                     worker_id: Some(worker_id),
 
                     cached_tokens: None,
                 });
 
                 next_request += 1;
-            } 
+            }
 
             // Start work on every idle worker.
-            self.start_queued_requests(
-                current_time_ms,
-                &mut events,
-            );
+            self.start_queued_requests(current_time_ms, &mut events);
         }
 
-        self.build_result(
-            metrics,
-            events,
-            current_time_ms,
-        )
+        self.build_result(metrics, events, current_time_ms)
     }
 
     fn has_active_requests(&self) -> bool {
-        self.workers
-            .iter()
-            .any(|worker| worker.active.is_some())
+        self.workers.iter().any(|worker| worker.active.is_some())
     }
 
     fn has_queued_requests(&self) -> bool {
-        self.workers
-            .iter()
-            .any(|worker| !worker.queue.is_empty())
+        self.workers.iter().any(|worker| !worker.queue.is_empty())
     }
 
-    fn next_completion_time(
-        &self,
-        current_time_ms: f64,
-    ) -> Option<f64> {
+    fn next_completion_time(&self, current_time_ms: f64) -> Option<f64> {
         self.workers
             .iter()
             .filter_map(|worker| {
-                worker.active.as_ref().map(|active| {
-                    current_time_ms + active.remaining_ms
-                })
+                worker
+                    .active
+                    .as_ref()
+                    .map(|active| current_time_ms + active.remaining_ms)
             })
-            .min_by(|a, b| {
-                a.partial_cmp(b).unwrap()
-            })
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
     }
 
     fn advance_time(&mut self, elasped_ms: f64) {
@@ -271,41 +221,31 @@ impl<P: RoutingPolicy> Simulator<P> {
 
         for worker in &mut self.workers {
             if let Some(active) = &mut worker.active {
-                active.remaining_ms = 
-                    (active.remaining_ms - elasped_ms)
-                        .max(0.0);
-                
+                active.remaining_ms = (active.remaining_ms - elasped_ms).max(0.0);
+
                 worker.total_busy_ms += elasped_ms;
             }
         }
     }
 
-
-    fn start_queued_requests(
-        &mut self,
-        current_time_ms: f64,
-        events: &mut Vec<SimulationEvent>,
-    ) {
+    fn start_queued_requests(&mut self, current_time_ms: f64, events: &mut Vec<SimulationEvent>) {
         for worker in &mut self.workers {
             if worker.active.is_some() {
                 continue;
             }
 
-            let Some(request) = worker.queue.pop_front()
-            else {
+            let Some(request) = worker.queue.pop_front() else {
                 continue;
             };
 
-            let cached_tokens = 
-                worker.cache.lookup(&request.tokens);
-            
-            let processing_time = 
-                self.config.performance.request_time(
-                    request.input_tokens(),
-                    cached_tokens,
-                    request.output_tokens,
-                );
-            
+            let cached_tokens = worker.cache.lookup(&request.tokens);
+
+            let processing_time = self.config.performance.request_time(
+                request.input_tokens(),
+                cached_tokens,
+                request.output_tokens,
+            );
+
             events.push(SimulationEvent {
                 time_ms: current_time_ms,
 
@@ -318,14 +258,12 @@ impl<P: RoutingPolicy> Simulator<P> {
                 cached_tokens: Some(cached_tokens),
             });
 
-            worker.active = Some(
-                ActiveRequest {
-                    request,
-                    remaining_ms: processing_time,
-                    start_time_ms: current_time_ms,
-                    cached_tokens,
-                }
-            );
+            worker.active = Some(ActiveRequest {
+                request,
+                remaining_ms: processing_time,
+                start_time_ms: current_time_ms,
+                cached_tokens,
+            });
         }
     }
 
@@ -337,38 +275,37 @@ impl<P: RoutingPolicy> Simulator<P> {
     ) {
         for worker in &mut self.workers {
             let completed = worker.active.take();
-    
+
             let Some(active) = completed else {
                 continue;
             };
-    
+
             if active.remaining_ms > 0.000001 {
                 worker.active = Some(active);
                 continue;
             }
 
             /*
-            *
-            * The request has finished.
-            * Its tokens can now become reusable
-            * cached state.
-            */
-    
+             *
+             * The request has finished.
+             * Its tokens can now become reusable
+             * cached state.
+             */
+
             let request = active.request;
 
             events.push(SimulationEvent {
                 time_ms: current_time_ms,
-            
+
                 kind: SimulationEventKind::Completed,
-            
+
                 request_id: request.id,
-            
+
                 worker_id: Some(worker.id),
-            
-                cached_tokens:
-                    Some(active.cached_tokens),
+
+                cached_tokens: Some(active.cached_tokens),
             });
-    
+
             metrics.push(RequestMetrics {
                 request_id: request.id,
                 worker_id: worker.id,
@@ -379,37 +316,30 @@ impl<P: RoutingPolicy> Simulator<P> {
                 cached_tokens: active.cached_tokens,
                 output_tokens: request.output_tokens,
             });
-    
-            worker
-                .cache
-                .insert(&request.tokens);
-    
+
+            worker.cache.insert(&request.tokens);
+
             worker.completed_requests += 1;
         }
     }
 
-    fn percentile(
-        sorted: &[f64],
-        percentile: f64,
-    ) -> f64 {
+    fn percentile(sorted: &[f64], percentile: f64) -> f64 {
         if sorted.is_empty() {
             return 0.0;
         }
-    
-        let index =
-            percentile * (sorted.len() - 1) as f64;
-    
+
+        let index = percentile * (sorted.len() - 1) as f64;
+
         let lower = index.floor() as usize;
         let upper = index.ceil() as usize;
-    
+
         if lower == upper {
             return sorted[lower];
         }
-    
+
         let weight = index - lower as f64;
-    
-        sorted[lower] * (1.0 - weight)
-            + sorted[upper] * weight
+
+        sorted[lower] * (1.0 - weight) + sorted[upper] * weight
     }
 
     fn build_result(
@@ -437,59 +367,39 @@ impl<P: RoutingPolicy> Simulator<P> {
             };
         }
 
-        let mut latencies: Vec<f64> =
-            requests
-                .iter()
-                .map(|r| r.completion_time_ms
-                               - r.arrival_time_ms)
-                .collect();
+        let mut latencies: Vec<f64> = requests
+            .iter()
+            .map(|r| r.completion_time_ms - r.arrival_time_ms)
+            .collect();
 
-        latencies.sort_by(|a, b| {
-            a.partial_cmp(b).unwrap()
-        });
+        latencies.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
-        let total_latency: f64 =
-            latencies.iter().sum();
+        let total_latency: f64 = latencies.iter().sum();
 
-        let total_queue_time: f64 =
-            requests
-                .iter()
-                .map(|r| r.start_time_ms - r.arrival_time_ms)
-                .sum();
+        let total_queue_time: f64 = requests
+            .iter()
+            .map(|r| r.start_time_ms - r.arrival_time_ms)
+            .sum();
 
-        let total_input_tokens: usize =
-            requests
-                .iter()
-                .map(|r| r.input_tokens)
-                .sum();
+        let total_input_tokens: usize = requests.iter().map(|r| r.input_tokens).sum();
 
-        let total_cached_tokens: usize =
-            requests
-                .iter()
-                .map(|r| r.cached_tokens)
-                .sum();
+        let total_cached_tokens: usize = requests.iter().map(|r| r.cached_tokens).sum();
 
-        let cache_hit_rate =
-            if total_input_tokens == 0 {
-                0.0
-            } else {
-                total_cached_tokens as f64
-                    / total_input_tokens as f64
-            };
+        let cache_hit_rate = if total_input_tokens == 0 {
+            0.0
+        } else {
+            total_cached_tokens as f64 / total_input_tokens as f64
+        };
 
-        let average_latency =
-            total_latency / total_requests as f64;
+        let average_latency = total_latency / total_requests as f64;
 
-        let average_queue_time =
-            total_queue_time / total_requests as f64;
+        let average_queue_time = total_queue_time / total_requests as f64;
 
-        let throughput =
-            if simulation_time_ms > 0.0 {
-                total_requests as f64
-                    / (simulation_time_ms / 1000.0)
-            } else {
-                0.0
-            };
+        let throughput = if simulation_time_ms > 0.0 {
+            total_requests as f64 / (simulation_time_ms / 1000.0)
+        } else {
+            0.0
+        };
 
         SimulationResult {
             requests,
@@ -506,35 +416,24 @@ impl<P: RoutingPolicy> Simulator<P> {
 
             average_latency_ms: average_latency,
 
-            p50_latency_ms:
-                Self::percentile(&latencies, 0.50),
+            p50_latency_ms: Self::percentile(&latencies, 0.50),
 
-            p95_latency_ms:
-                Self::percentile(&latencies, 0.95),
+            p95_latency_ms: Self::percentile(&latencies, 0.95),
 
-            p99_latency_ms:
-                Self::percentile(&latencies, 0.99),
+            p99_latency_ms: Self::percentile(&latencies, 0.99),
 
-            average_queue_time_ms:
-                average_queue_time,
+            average_queue_time_ms: average_queue_time,
 
-            throughput_requests_per_second:
-                throughput,
+            throughput_requests_per_second: throughput,
         }
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    use crate::{
-        model::PerformanceModel,
-        request::Request,
-        worker::Worker,
-        RoutingPolicy,
-    };
+    use crate::{RoutingPolicy, model::PerformanceModel, request::Request, worker::Worker};
 
     /*
      * A very simple policy for testing.
@@ -548,18 +447,12 @@ mod tests {
     struct FirstWorker;
 
     impl RoutingPolicy for FirstWorker {
-        fn choose_worker(
-            &mut self,
-            _request: &Request,
-            _workers: &mut [Worker],
-        ) -> usize {
+        fn choose_worker(&mut self, _request: &Request, _workers: &mut [Worker]) -> usize {
             0
         }
     }
 
-    fn test_config(
-        num_workers: usize,
-    ) -> SimulationConfig {
+    fn test_config(num_workers: usize) -> SimulationConfig {
         SimulationConfig {
             number_workers: num_workers,
 
@@ -572,10 +465,7 @@ mod tests {
         }
     }
 
-    fn assert_close(
-        actual: f64,
-        expected: f64,
-    ) {
+    fn assert_close(actual: f64, expected: f64) {
         let epsilon = 0.0001;
 
         assert!(
@@ -592,33 +482,19 @@ mod tests {
 
         let policy = FirstWorker;
 
-        let mut simulator =
-            Simulator::new(config, policy);
+        let mut simulator = Simulator::new(config, policy);
 
         let requests = vec![];
 
-        let result =
-            simulator.run(&requests);
+        let result = simulator.run(&requests);
 
-        assert_eq!(
-            result.total_requests,
-            0,
-        );
+        assert_eq!(result.total_requests, 0,);
 
-        assert_close(
-            result.simulation_time_ms,
-            0.0,
-        );
+        assert_close(result.simulation_time_ms, 0.0);
 
-        assert_close(
-            result.average_latency_ms,
-            0.0,
-        );
+        assert_close(result.average_latency_ms, 0.0);
 
-        assert_close(
-            result.cache_hit_rate,
-            0.0,
-        );
+        assert_close(result.cache_hit_rate, 0.0);
     }
 
     #[test]
@@ -627,31 +503,23 @@ mod tests {
 
         let policy = FirstWorker;
 
-        let mut simulator =
-            Simulator::new(config, policy);
+        let mut simulator = Simulator::new(config, policy);
 
-        let requests = vec![
-            Request {
-                id: 0,
+        let requests = vec![Request {
+            id: 0,
 
-                tokens: vec![1, 2, 3, 4],
+            tokens: vec![1, 2, 3, 4],
 
-                output_tokens: 4,
+            output_tokens: 4,
 
-                arrival_time_ms: 0,
-            },
-        ];
+            arrival_time_ms: 0,
+        }];
 
-        let result =
-            simulator.run(&requests);
+        let result = simulator.run(&requests);
 
-        assert_eq!(
-            result.total_requests,
-            1,
-        );
+        assert_eq!(result.total_requests, 1,);
 
-        let request =
-            &result.requests[0];
+        let request = &result.requests[0];
 
         /*
          * Input:
@@ -671,37 +539,17 @@ mod tests {
          * 6 ms
          */
 
-        assert_close(
-            request.start_time_ms,
-            0.0,
-        );
+        assert_close(request.start_time_ms, 0.0);
 
-        assert_close(
-            request.completion_time_ms,
-            6.0,
-        );
+        assert_close(request.completion_time_ms, 6.0);
 
-        assert_close(
-            request.start_time_ms
-                - request.arrival_time_ms,
-            0.0,
-        );
+        assert_close(request.start_time_ms - request.arrival_time_ms, 0.0);
 
-        assert_close(
-            request.completion_time_ms
-                - request.arrival_time_ms,
-            6.0,
-        );
+        assert_close(request.completion_time_ms - request.arrival_time_ms, 6.0);
 
-        assert_eq!(
-            request.cached_tokens,
-            0,
-        );
+        assert_eq!(request.cached_tokens, 0,);
 
-        assert_close(
-            result.simulation_time_ms,
-            6.0,
-        );
+        assert_close(result.simulation_time_ms, 6.0);
     }
 
     #[test]
@@ -710,8 +558,7 @@ mod tests {
 
         let policy = FirstWorker;
 
-        let mut simulator =
-            Simulator::new(config, policy);
+        let mut simulator = Simulator::new(config, policy);
 
         let requests = vec![
             Request {
@@ -723,7 +570,6 @@ mod tests {
 
                 arrival_time_ms: 0,
             },
-
             Request {
                 id: 1,
 
@@ -735,27 +581,13 @@ mod tests {
             },
         ];
 
-        let result =
-            simulator.run(&requests);
+        let result = simulator.run(&requests);
 
-        assert_eq!(
-            result.total_requests,
-            2,
-        );
+        assert_eq!(result.total_requests, 2,);
 
-        let r0 =
-            result
-                .requests
-                .iter()
-                .find(|r| r.request_id == 0)
-                .unwrap();
+        let r0 = result.requests.iter().find(|r| r.request_id == 0).unwrap();
 
-        let r1 =
-            result
-                .requests
-                .iter()
-                .find(|r| r.request_id == 1)
-                .unwrap();
+        let r1 = result.requests.iter().find(|r| r.request_id == 1).unwrap();
 
         /*
          * R0:
@@ -773,10 +605,7 @@ mod tests {
          * completes at 6 ms
          */
 
-        assert_close(
-            r0.completion_time_ms,
-            6.0,
-        );
+        assert_close(r0.completion_time_ms, 6.0);
 
         /*
          * R1 arrives at 2 ms.
@@ -788,10 +617,7 @@ mod tests {
          * 6 - 2 = 4 ms
          */
 
-        assert_close(
-            r1.start_time_ms,
-            6.0,
-        );
+        assert_close(r1.start_time_ms, 6.0);
 
         // assert_close(
         //     r1.queue_time_ms(),
@@ -804,10 +630,7 @@ mod tests {
          * Its processing time is also 6 ms.
          */
 
-        assert_close(
-            r1.completion_time_ms,
-            12.0,
-        );
+        assert_close(r1.completion_time_ms, 12.0);
 
         /*
          * Total latency:
@@ -827,8 +650,7 @@ mod tests {
 
         let policy = FirstWorker;
 
-        let mut simulator =
-            Simulator::new(config, policy);
+        let mut simulator = Simulator::new(config, policy);
 
         let requests = vec![
             Request {
@@ -840,7 +662,6 @@ mod tests {
 
                 arrival_time_ms: 0,
             },
-
             Request {
                 id: 1,
 
@@ -859,22 +680,11 @@ mod tests {
             },
         ];
 
-        let result =
-            simulator.run(&requests);
+        let result = simulator.run(&requests);
 
-        let r0 =
-            result
-                .requests
-                .iter()
-                .find(|r| r.request_id == 0)
-                .unwrap();
+        let r0 = result.requests.iter().find(|r| r.request_id == 0).unwrap();
 
-        let r1 =
-            result
-                .requests
-                .iter()
-                .find(|r| r.request_id == 1)
-                .unwrap();
+        let r1 = result.requests.iter().find(|r| r.request_id == 1).unwrap();
 
         /*
          * R0 finishes at:
@@ -882,19 +692,13 @@ mod tests {
          * 6 ms
          */
 
-        assert_close(
-            r0.completion_time_ms,
-            6.0,
-        );
+        assert_close(r0.completion_time_ms, 6.0);
 
         /*
          * R1 starts after R0.
          */
 
-        assert_close(
-            r1.start_time_ms,
-            6.0,
-        );
+        assert_close(r1.start_time_ms, 6.0);
 
         /*
          * R0:
@@ -912,10 +716,7 @@ mod tests {
          * Therefore:
          */
 
-        assert_eq!(
-            r1.cached_tokens,
-            3,
-        );
+        assert_eq!(r1.cached_tokens, 3,);
 
         /*
          * Only one input token remains
@@ -934,10 +735,7 @@ mod tests {
          * 4.5 ms
          */
 
-        assert_close(
-            r1.completion_time_ms,
-            10.5,
-        );
+        assert_close(r1.completion_time_ms, 10.5);
 
         /*
          * R1 arrived at 2 ms.
@@ -949,11 +747,7 @@ mod tests {
          * 10.5 - 2 = 8.5 ms
          */
 
-        assert_close(
-            r1.completion_time_ms -
-                r1.arrival_time_ms,
-            8.5,
-        );
+        assert_close(r1.completion_time_ms - r1.arrival_time_ms, 8.5);
     }
 
     #[test]
@@ -962,8 +756,7 @@ mod tests {
 
         let policy = FirstWorker;
 
-        let mut simulator =
-            Simulator::new(config, policy);
+        let mut simulator = Simulator::new(config, policy);
 
         let requests = vec![
             Request {
@@ -975,7 +768,6 @@ mod tests {
 
                 arrival_time_ms: 0,
             },
-
             Request {
                 id: 1,
 
@@ -987,8 +779,7 @@ mod tests {
             },
         ];
 
-        let result =
-            simulator.run(&requests);
+        let result = simulator.run(&requests);
 
         /*
          * Total input tokens:
@@ -1010,14 +801,8 @@ mod tests {
          * 3 / 8 = 0.375
          */
 
-        assert_close(
-            result.cache_hit_rate,
-            3.0 / 8.0,
-        );
+        assert_close(result.cache_hit_rate, 3.0 / 8.0);
 
-        assert_eq!(
-            result.total_cached_tokens,
-            3,
-        );
+        assert_eq!(result.total_cached_tokens, 3,);
     }
 }
